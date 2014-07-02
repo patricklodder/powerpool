@@ -17,6 +17,7 @@ powerpool:
     #loggers:
     #    - type: StreamHandler
     #      level: DEBUG
+       
     
 # The jobmanager is in charge of building jobs for the stratum workers, submitting
 # blocks to rpc servers, and pushing new block notifications to clients

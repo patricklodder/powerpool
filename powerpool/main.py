@@ -6,6 +6,7 @@ import gevent
 import signal
 import time
 import sys
+import socket
 import subprocess
 
 from gevent import spawn, sleep
@@ -45,7 +46,8 @@ class PowerPool(object):
     Each module can "register" a logger with the main object, which attaches
     it to configured handlers.
     """
-    def __init__(self, raw_config, procname="powerpool", term_timeout=3, loggers=None):
+    def __init__(self, raw_config, procname="powerpool", term_timeout=3,
+                 loggers=None, actionban=None):
         if not loggers:
             loggers = [{'type': 'StreamHandler', 'level': 'DEBUG'}]
 
@@ -81,8 +83,9 @@ class PowerPool(object):
         if self.sha == "unknown":
             # try and fetch the git version information
             try:
-                output = subprocess.check_output("git show -s --format='%ci %h'",
-                                                shell=True).strip().rsplit(" ", 1)
+                output = subprocess.check_output(
+                    "git show -s --format='%ci %h'",
+                    shell=True).strip().rsplit(" ", 1)
                 self.sha = output[1]
                 self.rev_date = output[0]
             # celery won't work with this, so set some default
@@ -105,6 +108,11 @@ class PowerPool(object):
         self.stratum_servers = []
         self.agent_servers = []
         self.monitor_server = None
+        if actionban:
+            self.actionban = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+            self.actionban_config = actionban
+        else:
+            self.actionban = None
 
         # Stats tracking for the whole server
         #####
@@ -114,6 +122,15 @@ class PowerPool(object):
         self.min_stat_counters = []
         self.sec_stat_counters = []
         self.stat_counters = {}
+
+    def actionban(self, typ, ip):
+        try:
+            self.actionban.sendto("action {jail} {sec_thresh} {min_thresh} {duration}"
+                                  .format(**self.actionban_config[typ]),
+                                  (self.actionban_config['host'],
+                                   self.actionban_config['port']))
+        except Exception:
+            self.logger.warn("Unable to send actionban action", exc_info=True)
 
     def register_logger(self, name):
         logger = logging.getLogger(name)
