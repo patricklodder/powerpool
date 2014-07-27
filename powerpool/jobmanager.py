@@ -138,7 +138,7 @@ class MonitorNetwork(Greenlet):
                     for key in self.one_min_stats})
         return dct
 
-    def found_merged_block(self, address, worker, hash_hex, header, job_id, coinbase_raw, typ):
+    def found_merged_block(self, address, worker, header, job_id, coinbase_raw, typ):
         """ Proxy method that sends merged blocks to the AuxChainMonitor for
         submission """
         try:
@@ -147,7 +147,7 @@ class MonitorNetwork(Greenlet):
             self.logger.error("Unable to submit block for job id {}, it "
                               "doesn't exist anymore! Only {}".format(job_id, self.jobs.keys()))
             return
-        self.auxmons[typ].found_block(address, worker, hash_hex, header, coinbase_raw, job)
+        self.auxmons[typ].found_block(address, worker, header, coinbase_raw, job)
 
     def found_block(self, raw_coinbase, address, worker, hash_hex, header, job_id, start):
         """ Submit a valid block (hopefully!) to the RPC servers """
@@ -462,14 +462,15 @@ class MonitorNetwork(Greenlet):
             merged_data = {}
             mm_data = None
 
-        self.logger.info("Generating new block template with {} trans. "
-                         "Diff {:,.4f}. Subsidy {:,.2f}. Height {:,}. "
-                         "Merged chains: {}"
-                         .format(len(self._last_gbt['transactions']),
-                                 bits_to_difficulty(self._last_gbt['bits']),
-                                 self._last_gbt['coinbasevalue'] / 100000000.0,
-                                 self._last_gbt['height'],
-                                 ', '.join(merged_data.keys())))
+        if new_block:
+            self.logger.info("Generating new block template with {} trans. "
+                             "Diff {:,.4f}. Subsidy {:,.2f}. Height {:,}. "
+                             "Merged chains: {}"
+                             .format(len(self._last_gbt['transactions']),
+                                     bits_to_difficulty(self._last_gbt['bits']),
+                                     self._last_gbt['coinbasevalue'] / 100000000.0,
+                                     self._last_gbt['height'],
+                                     ', '.join(merged_data.keys())))
 
         # here we recalculate the current merkle branch and partial
         # coinbases for passing to the mining clients
@@ -602,8 +603,9 @@ class MonitorAuxChain(Greenlet):
         self.current_net = dict(difficulty=None, height=None)
         self.recent_blocks = deque(maxlen=15)
 
+        self.prefix = self.config['name'] + "_"
         # create an instance local one_min_stats for use in the def status func
-        self.one_min_stats = [self.coin + "_" + key for key in self.one_min_stats]
+        self.one_min_stats = [self.prefix + key for key in self.one_min_stats]
         self.server.register_stat_counters(self.one_min_stats)
 
         self.coinservs = self.config['coinservs']
@@ -627,11 +629,11 @@ class MonitorAuxChain(Greenlet):
                              .format(command, e))
             raise RPCException(e)
 
-    def found_block(self, address, worker, hash_hex, header, coinbase_raw, job):
+    def found_block(self, address, worker, header, coinbase_raw, job):
         aux_data = job.merged_data[self.config['name']]
         self.block_stats['solves'] += 1
-        self.logger.info("New {} Aux block at height {} with hash {}"
-                         .format(self.config['name'], aux_data['height'], hash_hex))
+        self.logger.info("New {} Aux block at height {}"
+                         .format(self.config['name'], aux_data['height']))
         aux_block = (
             pack.IntType(256, 'big').pack(aux_data['hash']).encode('hex'),
             bitcoin_data.aux_pow_type.pack(dict(
